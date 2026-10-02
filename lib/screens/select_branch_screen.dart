@@ -3,11 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
-import 'sales_entry_screen.dart';
+import 'home_screen.dart';
 
 class SelectBranchScreen extends StatefulWidget {
+  const SelectBranchScreen({super.key});
   @override
-  _SelectBranchScreenState createState() => _SelectBranchScreenState();
+  State<SelectBranchScreen> createState() => _SelectBranchScreenState();
 }
 
 class _SelectBranchScreenState extends State<SelectBranchScreen> {
@@ -47,8 +48,9 @@ class _SelectBranchScreenState extends State<SelectBranchScreen> {
   void _selectBranch(int id, String name) async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     await authProvider.selectBranch(id, name);
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (context) => const SalesEntryScreen()),
+      MaterialPageRoute(builder: (context) => const HomeScreen()),
     );
   }
 

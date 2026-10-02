@@ -66,7 +66,7 @@ class AuthProvider with ChangeNotifier {
         return true;
       }
     } catch (e) {
-      print('Login Error: $e');
+      // print('Login Error: $e');
     }
     return false;
   }

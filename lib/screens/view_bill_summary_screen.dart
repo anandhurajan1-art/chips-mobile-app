@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../utils/invoice_printer.dart';
-import 'sales_entry_screen.dart';
+
 
 class ViewBillSummaryScreen extends StatefulWidget {
   const ViewBillSummaryScreen({super.key});
@@ -35,7 +35,7 @@ class _ViewBillSummaryScreenState extends State<ViewBillSummaryScreen> {
         }
       }
     } catch (e) {
-      print('Fetch Settings Error: $e');
+      // handled below
     }
   }
 
@@ -58,7 +58,7 @@ class _ViewBillSummaryScreenState extends State<ViewBillSummaryScreen> {
         throw Exception('Failed to load bills');
       }
     } catch (e) {
-      print('Fetch Bills Error: $e');
+      // handled below
       setState(() => _isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -107,19 +107,7 @@ class _ViewBillSummaryScreenState extends State<ViewBillSummaryScreen> {
                               const Text('Paid', style: TextStyle(color: Colors.green, fontSize: 12)),
                             ],
                           ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            icon: const Icon(Icons.edit, color: Colors.blue),
-                            onPressed: () async {
-                              final updated = await Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => SalesEntryScreen(editBill: bill)),
-                              );
-                              if (updated == true) {
-                                _fetchBills();
-                              }
-                            },
-                          ),
+
                           IconButton(
                             icon: const Icon(Icons.print, color: Colors.blueGrey),
                             onPressed: () {

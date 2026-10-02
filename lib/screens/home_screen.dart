@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import 'sales_entry_screen.dart';
 import 'select_branch_screen.dart';
 import 'take_order_screen.dart';
 import 'returns_screen.dart';
 import 'generate_bill_screen.dart';
 import 'view_bill_summary_screen.dart';
+import 'reports_screen.dart';
+import 'shop_list_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -16,13 +17,6 @@ class HomeScreen extends StatelessWidget {
     final auth = Provider.of<AuthProvider>(context);
 
     final List<Map<String, dynamic>> modules = [
-      {
-        'title': 'Sales Entry',
-        'icon': Icons.shopping_cart,
-        'privilege': 'SALES',
-        'color': Colors.blue,
-        'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SalesEntryScreen())),
-      },
       {
         'title': 'Take Order',
         'icon': Icons.assignment,
@@ -51,9 +45,23 @@ class HomeScreen extends StatelessWidget {
         'color': Colors.red,
         'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReturnsScreen())),
       },
+      {
+        'title': 'Reports',
+        'icon': Icons.bar_chart,
+        'privilege': 'VIEW_ITEM_COUNT_REPORT',
+        'color': Colors.indigo,
+        'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReportsScreen())),
+      },
+      {
+        'title': 'Manage Shops',
+        'icon': Icons.store,
+        'privilege': null,
+        'color': Colors.blue,
+        'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ShopListScreen())),
+      },
     ];
 
-    final availableModules = modules.where((m) => auth.hasPrivilege(m['privilege'])).toList();
+    final availableModules = modules.where((m) => m['privilege'] == null || auth.hasPrivilege(m['privilege'])).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -104,7 +112,7 @@ class HomeScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
@@ -116,7 +124,7 @@ class HomeScreen extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: (mod['color'] as Color).withOpacity(0.1),
+                            color: (mod['color'] as Color).withValues(alpha: 0.1),
                             shape: BoxShape.circle,
                           ),
                           child: Icon(

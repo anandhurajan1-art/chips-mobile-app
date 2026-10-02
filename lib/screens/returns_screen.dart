@@ -15,56 +15,94 @@ class _ReturnsScreenState extends State<ReturnsScreen> {
   
   bool _isSearching = false;
   Map<String, dynamic>? _invoiceDetails;
+  List<dynamic> _foundInvoices = [];
   List<Map<String, dynamic>> _returnItems = [];
   bool _isSaving = false;
 
+  List<dynamic> _shops = [];
+  String? _selectedShopId;
+  DateTime? _selectedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchShops();
+  }
+
+  Future<void> _fetchShops() async {
+    try {
+      final res = await _apiService.get('/shops');
+      if (res.statusCode == 200) {
+        setState(() => _shops = jsonDecode(res.body));
+      }
+    } catch (e) {
+      // error handled below
+    }
+  }
+
   Future<void> _searchInvoice() async {
     final query = _invoiceSearchCtrl.text.trim();
-    if (query.isEmpty) return;
+    if (query.isEmpty && _selectedShopId == null && _selectedDate == null) return;
 
-    setState(() => _isSearching = true);
+    setState(() {
+      _isSearching = true;
+      _foundInvoices = [];
+      _invoiceDetails = null;
+      _returnItems = [];
+    });
     
     try {
-      final res = await _apiService.get('/invoices');
-      if (res.statusCode == 200) {
-        final List<dynamic> invoices = jsonDecode(res.body);
-        final found = invoices.firstWhere(
-          (inv) => inv['invoiceNo'] == query || 'INV-${inv['id']}' == query || inv['id'].toString() == query,
-          orElse: () => null
-        );
+      String url = '/invoices';
+      final params = <String>[];
+      if (_selectedShopId != null) params.add('shopId=$_selectedShopId');
+      if (_selectedDate != null) params.add('date=${_selectedDate!.toIso8601String().split('T')[0]}');
+      if (params.isNotEmpty) url += '?${params.join('&')}';
 
-        if (found != null) {
-          setState(() {
-            _invoiceDetails = found;
-            _returnItems = (found['items'] as List).map((item) => {
-              'invoiceItemId': item['id'],
-              'itemName': item['itemName'],
-              'unit': item['unit'],
-              'price': item['price'],
-              'maxQty': item['quantity'],
-              'returnedQuantity': 0.0,
-              'reason': '',
-              'amount': 0.0,
-            }).toList();
-          });
+      final res = await _apiService.get(url);
+      if (res.statusCode == 200) {
+        List<dynamic> invoices = jsonDecode(res.body);
+        
+        if (query.isNotEmpty) {
+          invoices = invoices.where((inv) => 
+            inv['invoiceNo'] == query || 'INV-${inv['id']}' == query || inv['id'].toString() == query
+          ).toList();
+        }
+
+        if (invoices.isEmpty) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No invoices found matching criteria')));
+        } else if (invoices.length == 1) {
+          _selectInvoice(invoices[0]);
         } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invoice not found')));
-          }
           setState(() {
-            _invoiceDetails = null;
-            _returnItems = [];
+            _foundInvoices = invoices;
           });
         }
       }
     } catch (e) {
-      print('Search Invoice Error: $e');
+      // error handled below
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error searching invoice')));
       }
     } finally {
-      setState(() => _isSearching = false);
+      if (mounted) setState(() => _isSearching = false);
     }
+  }
+
+  void _selectInvoice(Map<String, dynamic> found) {
+    setState(() {
+      _foundInvoices = [];
+      _invoiceDetails = found;
+      _returnItems = (found['items'] as List).map((item) => {
+        'invoiceItemId': item['id'],
+        'itemName': item['itemName'],
+        'unit': item['unit'],
+        'price': item['price'],
+        'maxQty': item['quantity'],
+        'returnedQuantity': 0.0,
+        'reason': '',
+        'amount': 0.0,
+      }).toList();
+    });
   }
 
   void _updateReturnQty(int index, String qtyStr) {
@@ -134,7 +172,7 @@ class _ReturnsScreenState extends State<ReturnsScreen> {
         throw Exception('Server returned ${response.statusCode}');
       }
     } catch (e) {
-      print('Submit Return Error: $e');
+      // error handled below
       if (mounted) {
         Navigator.pop(context); // close dialog
         ScaffoldMessenger.of(context).showSnackBar(
@@ -157,29 +195,94 @@ class _ReturnsScreenState extends State<ReturnsScreen> {
           Container(
             padding: const EdgeInsets.all(16),
             color: Colors.white,
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _invoiceSearchCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Search Invoice No.',
-                      hintText: 'e.g. INV-1',
-                      isDense: true,
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        decoration: const InputDecoration(labelText: 'Shop', isDense: true),
+                        initialValue: _selectedShopId,
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('All Shops')),
+                          ..._shops.map((s) => DropdownMenuItem(
+                            value: s['id'].toString(), 
+                            child: Text(s['name'], overflow: TextOverflow.ellipsis)
+                          ))
+                        ],
+                        onChanged: (val) => setState(() => _selectedShopId = val),
+                      ),
                     ),
-                    onSubmitted: (_) => _searchInvoice(),
-                  ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: InkWell(
+                        onTap: () async {
+                          final date = await showDatePicker(
+                            context: context,
+                            initialDate: _selectedDate ?? DateTime.now(),
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (date != null) {
+                            setState(() => _selectedDate = date);
+                          }
+                        },
+                        child: InputDecorator(
+                          decoration: const InputDecoration(labelText: 'Date', isDense: true),
+                          child: Text(_selectedDate != null ? _selectedDate!.toIso8601String().split('T')[0] : 'All Dates'),
+                        ),
+                      ),
+                    ),
+                    if (_selectedDate != null)
+                      IconButton(
+                        icon: const Icon(Icons.clear, size: 16),
+                        onPressed: () => setState(() => _selectedDate = null),
+                      ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: _isSearching ? null : _searchInvoice,
-                  child: _isSearching 
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.search),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _invoiceSearchCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Search Invoice No. (Opt)',
+                          hintText: 'e.g. INV-1',
+                          isDense: true,
+                        ),
+                        onSubmitted: (_) => _searchInvoice(),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    ElevatedButton(
+                      onPressed: _isSearching ? null : _searchInvoice,
+                      child: _isSearching 
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.search),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
+          
+          if (_foundInvoices.isNotEmpty)
+            Expanded(
+              child: ListView.builder(
+                itemCount: _foundInvoices.length,
+                itemBuilder: (ctx, i) {
+                  final inv = _foundInvoices[i];
+                  return ListTile(
+                    title: Text('${inv['invoiceNo'] ?? 'INV-${inv['id']}'}'),
+                    subtitle: Text('${inv['shopName']} - ${inv['invoiceDate'].toString().split('T')[0]}'),
+                    trailing: Text('₹${inv['totalAmount']}'),
+                    onTap: () => _selectInvoice(inv),
+                  );
+                },
+              ),
+            ),
           
           if (_invoiceDetails != null)
             Expanded(
@@ -264,7 +367,7 @@ class _ReturnsScreenState extends State<ReturnsScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       boxShadow: [
-                        BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))
+                        BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -5))
                       ]
                     ),
                     child: SafeArea(

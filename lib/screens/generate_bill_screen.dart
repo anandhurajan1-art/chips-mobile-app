@@ -26,12 +26,14 @@ class _GenerateBillScreenState extends State<GenerateBillScreen> {
       final res = await _apiService.get('/orders');
       if (res.statusCode == 200) {
         final List<dynamic> allOrders = jsonDecode(res.body);
-        setState(() {
-          _pendingOrders = allOrders.where((o) => o['status'] == 'PENDING').toList();
-        });
+        if (mounted) {
+          setState(() {
+            _pendingOrders = allOrders.where((o) => o['status'] == 'PENDING').toList();
+          });
+        }
       }
     } catch (e) {
-      print('Fetch Orders Error: $e');
+      // print('Fetch Orders Error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error fetching pending orders')));
       }
@@ -55,6 +57,7 @@ class _GenerateBillScreenState extends State<GenerateBillScreen> {
 
     if (confirm != true) return;
 
+    if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -71,9 +74,10 @@ class _GenerateBillScreenState extends State<GenerateBillScreen> {
         }
         _fetchPendingOrders(); // refresh list
       } else {
-        throw Exception('Server returned ${res.statusCode}');
+        throw Exception('Server returned ${res.statusCode} with body: ${res.body}');
       }
     } catch (e) {
+      // print('Generate Bill Error: $e');
       if (mounted) {
         Navigator.pop(context); // close dialog
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to generate bill'), backgroundColor: Colors.red));

@@ -1,4 +1,4 @@
-import 'dart:typed_data';
+
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -77,7 +77,7 @@ class InvoicePrinter {
               pw.SizedBox(height: 20),
 
               // Items Table
-              pw.Table.fromTextArray(
+              pw.TableHelper.fromTextArray(
                 headerDecoration: const pw.BoxDecoration(
                   color: PdfColors.grey200,
                 ),

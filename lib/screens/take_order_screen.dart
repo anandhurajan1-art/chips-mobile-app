@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../providers/auth_provider.dart';
+
 import '../services/api_service.dart';
 
 class TakeOrderScreen extends StatefulWidget {
@@ -21,6 +20,10 @@ class _TakeOrderScreenState extends State<TakeOrderScreen> {
   
   List<dynamic> _shops = [];
   List<dynamic> _availableItems = [];
+
+  List<dynamic> _mostOrdered = [];
+  List<dynamic> _mostReturned = [];
+  bool _isLoadingAnalytics = false;
 
   @override
   void initState() {
@@ -56,9 +59,9 @@ class _TakeOrderScreenState extends State<TakeOrderScreen> {
         throw Exception('Failed to load data');
       }
     } catch (e) {
-      print(e);
-      setState(() => _isLoading = false);
+      // Error handled below
       if (mounted) {
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Error loading data from server')),
         );
@@ -91,7 +94,7 @@ class _TakeOrderScreenState extends State<TakeOrderScreen> {
     setState(() {
       _items[index]['itemListId'] = itemListId;
       _items[index]['unit'] = selected['unit']?['unitName'] ?? '';
-      _items[index]['price'] = selected['price'] ?? 0.0;
+      _items[index]['price'] = selected['unitPrice'] ?? 0.0;
       _items[index]['total'] = (_items[index]['price'] as double) * (_items[index]['qty'] as double);
     });
   }
@@ -104,8 +107,57 @@ class _TakeOrderScreenState extends State<TakeOrderScreen> {
     });
   }
 
+  Future<void> _fetchShopAnalytics(String shopId) async {
+    setState(() {
+      _isLoadingAnalytics = true;
+      _mostOrdered = [];
+      _mostReturned = [];
+    });
+    try {
+      final moRes = await _apiService.get('/shops/$shopId/most-ordered-items');
+      final mrRes = await _apiService.get('/shops/$shopId/most-returned-items');
+      
+      if (moRes.statusCode == 200) {
+        setState(() => _mostOrdered = jsonDecode(moRes.body));
+      }
+      if (mrRes.statusCode == 200) {
+        setState(() => _mostReturned = jsonDecode(mrRes.body));
+      }
+    } catch (e) {
+      // Silent fail
+    } finally {
+      if (mounted) setState(() => _isLoadingAnalytics = false);
+    }
+  }
+
+  void _onShopChanged(String? shopId) {
+    setState(() => _selectedShopId = shopId);
+    if (shopId != null) {
+      _fetchShopAnalytics(shopId);
+    }
+  }
+
   double get _grandTotal {
     return _items.fold(0.0, (sum, item) => sum + (item['total'] as double));
+  }
+
+  String _extractItemName(dynamic m) {
+    if (m is Map) {
+      if (m['itemName'] != null) return m['itemName'].toString();
+      if (m['item'] is Map && m['item']['itemName'] != null) return m['item']['itemName'].toString();
+      if (m['itemList'] is Map && m['itemList']['item'] is Map && m['itemList']['item']['itemName'] != null) return m['itemList']['item']['itemName'].toString();
+      if (m['item'] != null) return m['item'].toString();
+      if (m['name'] != null) return m['name'].toString();
+      return "Unknown Item"; // Fallback for when all possible keys are null
+    }
+    return m.toString();
+  }
+
+  String _extractQty(dynamic m) {
+    if (m is Map) {
+      return (m['totalQuantity'] ?? m['quantity'] ?? m['totalSold'] ?? m['totalReturned'] ?? m['total'] ?? '').toString();
+    }
+    return '';
   }
 
   Future<void> _saveOrder() async {
@@ -143,7 +195,7 @@ class _TakeOrderScreenState extends State<TakeOrderScreen> {
         }).toList(),
       };
 
-      late final response;
+      dynamic response;
       if (widget.editOrder != null) {
         response = await _apiService.put('/orders/${widget.editOrder!['id']}', payload);
       } else {
@@ -167,14 +219,21 @@ class _TakeOrderScreenState extends State<TakeOrderScreen> {
           });
         }
       } else {
-        throw Exception('Server returned ${response.statusCode}');
+        String errMsg = 'Server returned ${response.statusCode}';
+        try {
+          final errBody = jsonDecode(response.body);
+          if (errBody['message'] != null) {
+            errMsg = errBody['message'];
+          }
+        } catch (_) {}
+        throw Exception(errMsg);
       }
     } catch (e) {
-      print('Save Order Error: $e');
+      // handled below
       if (mounted) {
         Navigator.pop(context); // close dialog
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error saving order'), backgroundColor: Colors.red),
+          SnackBar(content: Text(e.toString().replaceAll('Exception: ', '')), backgroundColor: Colors.red),
         );
       }
     }
@@ -193,14 +252,62 @@ class _TakeOrderScreenState extends State<TakeOrderScreen> {
           Container(
             padding: const EdgeInsets.all(16),
             color: Colors.white,
-            child: DropdownButtonFormField<String>(
-              decoration: const InputDecoration(labelText: 'Select Shop'),
-              value: _selectedShopId,
-              items: _shops.map((s) => DropdownMenuItem(
-                value: s['id'].toString(), 
-                child: Text('${s['name']} (${s['place']})')
-              )).toList(),
-              onChanged: (val) => setState(() => _selectedShopId = val),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                DropdownButtonFormField<String>(
+                  decoration: const InputDecoration(labelText: 'Select Shop'),
+                  initialValue: _selectedShopId,
+                  items: _shops.map((s) => DropdownMenuItem(
+                    value: s['id'].toString(), 
+                    child: Text('${s['name']} (${s['place']})')
+                  )).toList(),
+                  onChanged: _onShopChanged,
+                ),
+                if (_selectedShopId != null) ...[
+                  const SizedBox(height: 16),
+                  if (_isLoadingAnalytics)
+                    const Center(child: Padding(padding: EdgeInsets.all(8), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))))
+                  else if (_mostOrdered.isNotEmpty || _mostReturned.isNotEmpty)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_mostOrdered.isNotEmpty)
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Most Ordered', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green)),
+                                  const SizedBox(height: 4),
+                                  ..._mostOrdered.map((m) => Text('• ${_extractItemName(m)} (${_extractQty(m)})', style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis, maxLines: 2)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        if (_mostOrdered.isNotEmpty && _mostReturned.isNotEmpty)
+                          const SizedBox(width: 8),
+                        if (_mostReturned.isNotEmpty)
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Most Returned', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red)),
+                                  const SizedBox(height: 4),
+                                  ..._mostReturned.map((m) => Text('• ${_extractItemName(m)} (${_extractQty(m)})', style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis, maxLines: 2)),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                ]
+              ],
             ),
           ),
           Expanded(
@@ -226,7 +333,7 @@ class _TakeOrderScreenState extends State<TakeOrderScreen> {
                                       labelText: 'Item',
                                       contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                     ),
-                                    value: item['itemListId'],
+                                    initialValue: item['itemListId'],
                                     items: _availableItems.map((ai) => 
                                       DropdownMenuItem(
                                         value: ai['id'].toString(), 
@@ -291,7 +398,7 @@ class _TakeOrderScreenState extends State<TakeOrderScreen> {
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 10,
                   offset: const Offset(0, -5),
                 )
